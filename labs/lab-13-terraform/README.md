@@ -31,42 +31,68 @@ sleep 8
 > Ready-made file: [`main.tf`](main.tf) — you can download it instead of typing this block.
 
 ```bash
-mkdir -p /tmp/tf && cd /tmp/tf
-cat > main.tf <<'EOF'
-terraform {
-  required_providers { aws = { source = "hashicorp/aws" version = "~> 5.0" } }
-}
+# ============================================================
+# FIX LOCALSTACK + AWS CLI + TERRAFORM
+# ============================================================
 
-provider "aws" {
-  region                      = "us-east-1"
-  access_key                  = "test"
-  secret_key                  = "test"
-  skip_credentials_validation = true
-  skip_metadata_api_check     = true
-  skip_requesting_account_id  = true
-  s3_use_path_style           = true
-  endpoints { s3 = "http://localhost:4566" iam = "http://localhost:4566" }
-}
+cd /tmp/tf
 
-variable "env" { default = "dev" }
+# 1. Install AWS CLI
+apt update
+apt install -y awscli
 
-resource "aws_s3_bucket" "data" {
-  bucket = "cloudplus-${var.env}-data"
-}
-EOF
+# 2. Check LocalStack container
+docker ps -a --filter name=public-cloud
+
+# 3. Remove any stopped LocalStack container
+docker rm -f public-cloud 2>/dev/null || true
+
+# 4. Start LocalStack
+docker run -d \
+  --name public-cloud \
+  -p 4566:4566 \
+  -e SERVICES=s3,ec2,iam \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  localstack/localstack:3.8
+
+# 5. Wait for LocalStack
+sleep 10
+
+# 6. Verify LocalStack is running
+docker ps --filter name=public-cloud
+
+# 7. Check LocalStack health
+curl -s http://localhost:4566/_localstack/health
+
+# 8. Configure AWS CLI
+aws configure set aws_access_key_id test
+aws configure set aws_secret_access_key test
+aws configure set default.region us-east-1
+
+# 9. Test S3 connection
+aws --endpoint-url=http://localhost:4566 s3 ls
+
+# 10. Validate Terraform
+terraform fmt
+terraform validate
+
+# 11. Reinitialize Terraform
+terraform init -upgrade
+
+# 12. Plan
+terraform plan
+
+# 13. Apply
+terraform apply -auto-approve
+
+# 14. Verify Terraform-created bucket
+aws --endpoint-url=http://localhost:4566 s3 ls
 ```
 
 ---
 
 ## Step 3 — Init, plan, apply
 
-```bash
-terraform init
-terraform plan
-terraform apply -auto-approve
-```
-
-Inspect state:
 
 ```bash
 terraform state list
