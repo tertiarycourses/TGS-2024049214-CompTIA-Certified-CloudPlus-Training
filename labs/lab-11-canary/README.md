@@ -106,19 +106,11 @@ for i in $(seq 1 20); do curl -s http://localhost/; done | sort | uniq -c
 
 ---
 
-## Step 6 — Rollback (kill the canary)
 
-If your monitoring (Lab 16) shows v2 errors rising, flip the weights back:
-
-```bash
-sed -i 's/weight 0  check backup/weight 100 check/; s/weight 100 check$/weight 0  check backup/' /etc/haproxy/haproxy.cfg
-systemctl reload haproxy
-curl -s http://localhost/
-```
 
 ---
 
-## Step 7 — Cleanup
+## Step 6 — Cleanup
 
 ```bash
 docker rm -f v1 v2
