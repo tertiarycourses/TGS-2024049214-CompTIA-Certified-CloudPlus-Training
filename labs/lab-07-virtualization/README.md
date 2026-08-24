@@ -132,13 +132,24 @@ rm -f /var/vm/vm*.qcow2 /var/vm/alpine-virt-3.19.1-x86_64.iso
 Run these checks to prove the lab worked before you move on:
 
 ```bash
-qemu-img info /var/vm/vm1.qcow2
-qemu-img info /var/vm/vm2.qcow2 | grep -i backing
-ls -lh /var/vm/vm*.qcow2
-egrep -c '(vmx|svm)' /proc/cpuinfo
+cd /var/vm
+
+wget -q https://dl-cdn.alpinelinux.org/alpine/v3.19/releases/x86_64/alpine-virt-3.19.1-x86_64.iso
+
+qemu-img create -f qcow2 vm1.qcow2 2G
+
+qemu-system-x86_64 \
+  -m 256 \
+  -nographic \
+  -hda vm1.qcow2 \
+  -cdrom alpine-virt-3.19.1-x86_64.iso \
+  -boot d \
+  -net nic \
+  -net user
 ```
 
-**Expected:** Run this before Step 9. `vm1.qcow2` reports `file format: qcow2` with a 2.0 GiB virtual size; `vm2.qcow2` names `vm1.qcow2` as its **backing file** and its on-disk size is only a few hundred KB versus vm1's — proof the linked clone stores deltas only; the CPU flag count is a number (non-zero means the host supports hardware-assisted virtualization).
+**Expected:** Run this before Step 9. `Welcome to Alpine Linux
+localhost login.
 
 ---
 
