@@ -139,7 +139,7 @@ aws --endpoint-url=http://localhost:4566 s3 ls
 
 ---
 
-## Step 3 — Init, plan, apply
+## Step 3 — status
 
 
 ```bash
