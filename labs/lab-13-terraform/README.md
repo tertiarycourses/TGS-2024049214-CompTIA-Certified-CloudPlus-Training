@@ -32,22 +32,15 @@ sleep 8
 
 ```bash
 # ============================================================
-# FIX LOCALSTACK + AWS CLI + TERRAFORM
+# COMPLETE FIX — LOCALSTACK + AWS CLI + TERRAFORM
 # ============================================================
 
-cd /tmp/tf
+# 1. Make sure Docker is running
+systemctl enable --now docker
 
-# 1. Install AWS CLI
-apt update
-apt install -y awscli
-
-# 2. Check LocalStack container
-docker ps -a --filter name=public-cloud
-
-# 3. Remove any stopped LocalStack container
+# 2. Make sure LocalStack 3.8 is running
 docker rm -f public-cloud 2>/dev/null || true
 
-# 4. Start LocalStack
 docker run -d \
   --name public-cloud \
   -p 4566:4566 \
@@ -55,37 +48,92 @@ docker run -d \
   -e AWS_DEFAULT_REGION=us-east-1 \
   localstack/localstack:3.8
 
-# 5. Wait for LocalStack
 sleep 10
 
-# 6. Verify LocalStack is running
+# 3. Verify LocalStack
 docker ps --filter name=public-cloud
 
-# 7. Check LocalStack health
 curl -s http://localhost:4566/_localstack/health
 
-# 8. Configure AWS CLI
+# 4. Install AWS CLI v2
+cd /tmp
+
+rm -rf aws awscliv2.zip
+
+wget -q "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" \
+  -O awscliv2.zip
+
+unzip -q awscliv2.zip
+
+./aws/install --update
+
+# 5. Verify AWS CLI
+aws --version
+
+# 6. Configure AWS CLI for LocalStack
 aws configure set aws_access_key_id test
 aws configure set aws_secret_access_key test
 aws configure set default.region us-east-1
 
-# 9. Test S3 connection
+# 7. Test LocalStack S3
 aws --endpoint-url=http://localhost:4566 s3 ls
 
-# 10. Validate Terraform
+# 8. Create Terraform working directory
+mkdir -p /tmp/tf
+cd /tmp/tf
+
+# 9. Create Terraform configuration
+cat > main.tf <<'EOF'
+terraform {
+  required_providers {
+    aws = {
+      source  = "hashicorp/aws"
+      version = "~> 5.0"
+    }
+  }
+}
+
+provider "aws" {
+  region                      = "us-east-1"
+  access_key                  = "test"
+  secret_key                  = "test"
+  skip_credentials_validation = true
+  skip_metadata_api_check     = true
+  skip_requesting_account_id  = true
+  skip_region_validation      = true
+
+  endpoints {
+    s3  = "http://localhost:4566"
+    iam = "http://localhost:4566"
+    ec2 = "http://localhost:4566"
+  }
+
+  s3_use_path_style = true
+}
+
+variable "env" {
+  default = "dev"
+}
+
+resource "aws_s3_bucket" "data" {
+  bucket = "tf-${var.env}-data"
+}
+EOF
+
+# 10. Format and validate Terraform
 terraform fmt
 terraform validate
 
-# 11. Reinitialize Terraform
-terraform init -upgrade
+# 11. Initialize Terraform
+terraform init
 
-# 12. Plan
+# 12. Create execution plan
 terraform plan
 
-# 13. Apply
+# 13. Apply Terraform
 terraform apply -auto-approve
 
-# 14. Verify Terraform-created bucket
+# 14. Verify bucket using AWS CLI
 aws --endpoint-url=http://localhost:4566 s3 ls
 ```
 
