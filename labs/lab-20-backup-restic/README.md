@@ -71,8 +71,51 @@ restic deduplicates at block level — only deltas travel.
 ## Step 5 — Differential-style: snapshot since the full
 
 ```bash
-restic backup /data/app --tag diff --parent $(restic snapshots --tag full --json | python3 -c 'import json,sys; print(json.load(sys.stdin)[0]["short_id"])')
+# ============================================================
+# RESTIC BACKUP TO MINIO — COMPLETE LAB
+# ============================================================
+
+# Set Restic repository on MinIO
+export AWS_ACCESS_KEY_ID=admin
+export AWS_SECRET_ACCESS_KEY=cloudplus
+export RESTIC_REPOSITORY="s3:http://127.0.0.1:9000/backups"
+export RESTIC_PASSWORD="cloudplus-restic"
+
+# Initialize Restic repository
+restic init
+
+# Create sample application data
+mkdir -p /data/app
+
+for i in 1 2 3; do
+    dd if=/dev/urandom of=/data/app/file$i bs=1M count=2 2>/dev/null
+done
+
+# First full backup
+restic backup /data/app --tag full
+
+# Show snapshots
 restic snapshots
+
+# Modify existing data and add a new file
+echo "new content" >> /data/app/file1
+
+dd if=/dev/urandom of=/data/app/file4 bs=1M count=1 2>/dev/null
+
+# Second backup
+restic backup /data/app --tag incremental
+
+# Show all snapshots
+restic snapshots
+
+# Show statistics for latest snapshot
+restic stats latest
+
+# Show files in latest snapshot
+restic ls latest
+
+# Show repository statistics
+restic stats --mode restore-size
 ```
 
 ---
