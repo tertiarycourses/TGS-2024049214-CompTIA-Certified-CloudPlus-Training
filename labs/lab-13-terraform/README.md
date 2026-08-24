@@ -157,10 +157,27 @@ The state file is the source of truth — back it up to a remote backend in prod
 Manually mutate the bucket outside Terraform:
 
 ```bash
-docker exec localstack awslocal s3api put-bucket-tagging \
-  --bucket cloudplus-dev-data \
+# ============================================================
+# TERRAFORM DRIFT DETECTION TEST
+# ============================================================
+
+cd /tmp/tf
+
+# Check LocalStack container
+docker ps --filter name=public-cloud
+
+# Add a manual tag outside Terraform
+docker exec public-cloud \
+  awslocal s3api put-bucket-tagging \
+  --bucket tf-dev-data \
   --tagging 'TagSet=[{Key=DriftedBy,Value=human}]'
 
+# Verify the manual change
+docker exec public-cloud \
+  awslocal s3api get-bucket-tagging \
+  --bucket tf-dev-data
+
+# Run Terraform plan
 terraform plan
 ```
 
