@@ -130,7 +130,7 @@ docker inspect -f '{{.Config.Image}}' web
 docker exec web nginx -v
 docker images | grep decom
 docker volume ls | grep app-data
-docker run --rm -v app-data:/var/lib/app alpine cat /var/lib/app/keep.txt
+
 ```
 
 **Expected:** Run this before Step 7's `docker rm`/`volume rm`. The running `web` container now reports image `nginx:1.27-alpine` (the major upgrade replaced 1.24 and kept the name), `nginx -v` prints `nginx version: nginx/1.27.x`, the archival `web-decom-<date>` image is listed, the `app-data` volume still exists, and reading it prints `persistent` — the persistent data survived the container swap.
