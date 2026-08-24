@@ -15,6 +15,18 @@ https://killercoda.com/playgrounds/scenario/ubuntu
 ## Step 1 — Install tools
 
 ```bash
+apt update
+apt install -y docker.io wireguard wireguard-tools curl unzip
+
+systemctl enable --now docker
+
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o /tmp/awscliv2.zip
+unzip -q /tmp/awscliv2.zip -d /tmp
+/tmp/aws/install
+
+aws --version
+docker --version
+wg --version
 apt update && apt install -y docker.io awscli wireguard wireguard-tools
 systemctl start docker
 ```
