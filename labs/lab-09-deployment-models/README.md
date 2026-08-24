@@ -38,6 +38,14 @@ systemctl start docker
 LocalStack is a free, open-source AWS emulator — perfect for the lab without a real account.
 
 ```bash
+docker run -d \
+  --name public-cloud \
+  -p 4566:4566 \
+  -e SERVICES=s3,ec2,iam \
+  -e AWS_DEFAULT_REGION=us-east-1 \
+  localstack/localstack:3.8
+
+
 docker run -d --name public-cloud -p 4566:4566 \
   -e SERVICES=s3,ec2,iam \
   localstack/localstack:latest
@@ -53,6 +61,8 @@ aws configure set aws_secret_access_key test
 aws configure set default.region us-east-1
 
 aws --endpoint-url=http://localhost:4566 s3 mb s3://public-bucket
+
+
 aws --endpoint-url=http://localhost:4566 s3 ls
 ```
 
