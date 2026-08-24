@@ -149,7 +149,7 @@ qemu-system-x86_64 \
 ```
 
 **Expected:** Run this before Step 9. `Welcome to Alpine Linux
-localhost login.
+localhost login.  the VM is running its own Linux kernel, which demonstrates the difference from a container.
 
 ---
 
