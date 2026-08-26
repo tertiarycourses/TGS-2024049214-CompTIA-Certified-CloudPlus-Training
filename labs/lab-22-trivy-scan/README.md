@@ -86,9 +86,15 @@ trivy fs --security-checks vuln,secret /etc | head -30
 > Ready-made file: [`main.tf`](main.tf) — you can download it instead of typing this block.
 
 ```bash
-mkdir -p /tmp/tf-bad && cat > /tmp/tf-bad/main.tf <<'EOF'
-resource "aws_s3_bucket" "bad" { bucket = "world-readable" }
-resource "aws_s3_bucket_acl" "bad" { bucket = aws_s3_bucket.bad.id  acl = "public-read" }
+cat > /tmp/tf-bad/main.tf <<'EOF'
+resource "aws_s3_bucket" "bad" {
+  bucket = "world-readable"
+}
+
+resource "aws_s3_bucket_acl" "bad" {
+  bucket = aws_s3_bucket.bad.id
+  acl    = "public-read"
+}
 EOF
 
 trivy config /tmp/tf-bad
