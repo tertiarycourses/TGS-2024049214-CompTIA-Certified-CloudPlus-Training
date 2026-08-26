@@ -101,6 +101,8 @@ apt-get install -y wget
 wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 ```
 ```
+mkdir -p /tmp/docker-lab
+
 cat > /tmp/docker-lab/Dockerfile <<'EOF'
 FROM ubuntu:20.04
 
@@ -112,6 +114,12 @@ EXPOSE 22
 
 CMD ["bash"]
 EOF
+
+echo "=== Dockerfile ==="
+cat /tmp/docker-lab/Dockerfile
+
+echo "=== Trivy Scan ==="
+trivy config /tmp/docker-lab
 ```
 ```
 trivy config /tmp/docker-lab
