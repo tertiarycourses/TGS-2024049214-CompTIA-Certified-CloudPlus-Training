@@ -96,13 +96,26 @@ Lynis covers Ubuntu/RHEL OS hardening. For cloud-vendor benchmarks use:
 Quick demo:
 
 ```bash
-docker run --rm --net host --pid host --userns host --cap-add audit_control \
-  -v /etc:/etc:ro -v /var/lib:/var/lib:ro -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  --label docker_bench_security \
-  docker/docker-bench-security 2>&1 | head -40
+apt-get update
+apt-get install -y wget
+wget -qO- https://raw.githubusercontent.com/aquasecurity/trivy/main/contrib/install.sh | sh -s -- -b /usr/local/bin
 ```
+```
+cat > /tmp/docker-lab/Dockerfile <<'EOF'
+FROM ubuntu:20.04
 
----
+USER root
+
+RUN apt-get update && apt-get install -y openssh-server
+
+EXPOSE 22
+
+CMD ["bash"]
+EOF
+```
+```
+trivy config /tmp/docker-lab
+```
 
 ## Step 8 — Cleanup
 
