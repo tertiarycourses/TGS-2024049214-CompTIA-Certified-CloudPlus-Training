@@ -109,9 +109,21 @@ Trivy flags the public-read S3 bucket — an **outdated/insecure component defin
 Add to a CI pipeline (Lab 30):
 
 ```bash
+mkdir -p /tmp/trivy-app
+
+cat > /tmp/trivy-app/Dockerfile <<'EOF'
+FROM ubuntu:20.04
+RUN apt-get update && apt-get install -y curl
+CMD ["bash"]
+EOF
+
+cd /tmp/trivy-app
+docker build -t myorg/myapp:latest .
+
+```
+```
 trivy image --exit-code 1 --severity CRITICAL myorg/myapp:latest
 ```
-
 Non-zero exit fails the build — this is the "gate" that stops vulnerable images from shipping.
 
 ---
