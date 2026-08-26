@@ -91,13 +91,75 @@ You now have a **2-minute-lifetime** Postgres user. After 2 minutes Vault delete
 ## Step 5 — Audit log (compliance)
 
 ```bash
-docker exec -e VAULT_TOKEN=cloudplus vault \
-  vault audit enable file file_path=/vault/logs/audit.log
+# 1. PostgreSQL
+docker rm -f pg 2>/dev/null || true
 
-docker exec -e VAULT_TOKEN=cloudplus vault \
-  vault kv get secret/app/db >/dev/null
+docker run -d --name pg --network=host \
+  -e POSTGRES_PASSWORD=root \
+  postgres:16
 
-docker exec vault tail -3 /vault/logs/audit.log
+sleep 8
+
+# 2. Check PostgreSQL
+docker exec pg pg_isready -h 127.0.0.1 -p 5432
+
+# 3. Set Vault to HTTP
+export VAULT_ADDR=http://127.0.0.1:8200
+export VAULT_TOKEN=cloudplus
+
+# 4. Verify Vault connectivity
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault status
+
+# 5. Enable Vault database secrets engine
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault secrets enable database 2>/dev/null || true
+
+# 6. Configure PostgreSQL
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault write database/config/pg \
+    plugin_name=postgresql-database-plugin \
+    allowed_roles=readonly \
+    connection_url='postgresql://{{username}}:{{password}}@host.docker.internal:5432/postgres?sslmode=disable' \
+    username=postgres \
+    password=root
+
+# 7. Create dynamic database role
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault write database/roles/readonly \
+    db_name=pg \
+    creation_statements='CREATE ROLE "{{name}}" WITH LOGIN PASSWORD "{{password}}" VALID UNTIL "{{expiration}}"; GRANT pg_read_all_data TO "{{name}}";' \
+    default_ttl=2m \
+    max_ttl=5m
+
+# 8. Generate temporary PostgreSQL credentials
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault read database/creds/readonly
+
+# 9. Enable Vault audit logging
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault audit enable file file_path=/vault/logs/audit.log 2>/dev/null || true
+
+# 10. Test Vault KV access
+docker exec \
+  -e VAULT_ADDR=http://127.0.0.1:8200 \
+  -e VAULT_TOKEN=cloudplus \
+  vault vault kv get secret/app/db >/dev/null
+
+# 11. Show latest audit events
+docker exec vault sh -c 'tail -3 /vault/logs/audit.log'
 ```
 
 Every secret access is logged. SOC2 / PCI-DSS love this.
