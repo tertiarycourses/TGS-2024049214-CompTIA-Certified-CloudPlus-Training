@@ -16,15 +16,33 @@ https://killercoda.com/playgrounds/scenario/ubuntu
 
 ```bash
 apt update && apt install -y docker.io curl
-systemctl start docker
+systemctl enable --now docker
 
-docker run -d --name waf \
-  -p 80:80 \
-  -e BACKEND=http://example.com \
-  -e PARANOIA=1 \
+docker rm -f waf backend 2>/dev/null || true
+docker network rm wafnet 2>/dev/null || true
+
+docker network create wafnet
+
+docker run -d \
+  --name backend \
+  --network wafnet \
+  nginx:alpine
+
+docker run -d \
+  --name waf \
+  --network wafnet \
+  -p 80:8080 \
+  -e BACKEND=http://backend:80 \
+  -e BLOCKING_PARANOIA=1 \
+  -e DETECTION_PARANOIA=1 \
+  -e MODSEC_RULE_ENGINE=on \
+  -e MODSEC_AUDIT_ENGINE=RelevantOnly \
   owasp/modsecurity-crs:nginx
-sleep 5
-curl -sI http://localhost/
+
+sleep 10
+
+docker ps --filter name=waf --filter name=backend
+curl -s -o /dev/null -w "health=%{http_code}\n" http://localhost/healthz
 ```
 
 This image bundles Nginx + libmodsecurity + OWASP CRS — the same WAF logic AWS WAF and Cloudflare WAF base their managed rules on.
@@ -34,7 +52,8 @@ This image bundles Nginx + libmodsecurity + OWASP CRS — the same WAF logic AWS
 ## Step 2 — Run a benign request (allowed)
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?q=cats"
+curl -s -o /dev/null -w "benign=%{http_code}\n" \
+  "http://localhost/?q=cats"
 ```
 
 ---
@@ -42,7 +61,10 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?q=cats"
 ## Step 3 — Trigger a SQL injection rule
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?id=1' OR '1'='1"
+curl -s -o /dev/null -w "sqli=%{http_code}\n" \
+  --get \
+  --data-urlencode "id=1' OR '1'='1" \
+  http://localhost/
 ```
 
 You should see **403** — CRS rule 942100 (SQLi).
@@ -52,7 +74,10 @@ You should see **403** — CRS rule 942100 (SQLi).
 ## Step 4 — Trigger an XSS rule
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?msg=<script>alert(1)</script>"
+curl -s -o /dev/null -w "xss=%{http_code}\n" \
+  --get \
+  --data-urlencode 'msg=<script>alert(1)</script>' \
+  http://localhost/
 ```
 
 403 — CRS rule 941100 (XSS).
@@ -62,7 +87,10 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?msg=<script>alert(1)
 ## Step 5 — Trigger a path-traversal / LFI rule
 
 ```bash
-curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?file=../../../../etc/passwd"
+curl -s -o /dev/null -w "lfi=%{http_code}\n" \
+  --get \
+  --data-urlencode 'file=../../../../etc/passwd' \
+  http://localhost/
 ```
 
 403 — CRS rule 930100.
@@ -72,7 +100,43 @@ curl -s -o /dev/null -w "%{http_code}\n" "http://localhost/?file=../../../../etc
 ## Step 6 — Inspect the WAF audit log
 
 ```bash
-docker exec waf tail -40 /var/log/modsec/modsec_audit.log
+docker rm -f waf
+touch /tmp/modsec_audit.log
+
+docker run -d \
+  --name waf \
+  --network wafnet \
+  -p 80:8080 \
+  -e BACKEND=http://backend:80 \
+  -e BLOCKING_PARANOIA=1 \
+  -e DETECTION_PARANOIA=1 \
+  -e MODSEC_RULE_ENGINE=on \
+  -e MODSEC_AUDIT_ENGINE=RelevantOnly \
+  -e MODSEC_AUDIT_LOG=/var/log/modsec_audit.log \
+  -v /tmp/modsec_audit.log:/var/log/modsec_audit.log \
+  owasp/modsecurity-crs:nginx
+
+sleep 10
+
+curl -s -o /dev/null \
+  -w "sqli=%{http_code}\n" \
+  --get \
+  --data-urlencode "id=1' OR '1'='1" \
+  http://localhost/
+
+curl -s -o /dev/null \
+  -w "xss=%{http_code}\n" \
+  --get \
+  --data-urlencode 'msg=<script>alert(1)</script>' \
+  http://localhost/
+
+curl -s -o /dev/null \
+  -w "lfi=%{http_code}\n" \
+  --get \
+  --data-urlencode 'file=../../../../etc/passwd' \
+  http://localhost/
+
+tail -40 /tmp/modsec_audit.log
 ```
 
 You will see the matched rule IDs, the request, and the score.
@@ -84,8 +148,8 @@ You will see the matched rule IDs, the request, and the score.
 ModSecurity uses an **anomaly score**. The default block threshold is 5. To accept a known-good pattern:
 
 ```bash
-docker exec waf sh -c "echo 'SecRuleRemoveById 941100' >> /etc/modsecurity.d/exclusions.conf"
-docker restart waf
+docker exec waf sh -c \
+  'find /etc/modsecurity.d -type f | sort | grep -Ei "exclusion|custom"'
 ```
 
 In production you tune via test → staging → prod, never prod-first.
@@ -117,12 +181,9 @@ docker rm -f waf
 Run these checks to prove the lab worked before you move on:
 
 ```bash
-docker ps --filter name=waf --format '{{.Names}}\t{{.Status}}'
-curl -s -o /dev/null -w "benign=%{http_code}\n" "http://localhost/?q=cats"
-curl -s -o /dev/null -w "sqli=%{http_code}\n" "http://localhost/?id=1' OR '1'='1"
-curl -s -o /dev/null -w "xss=%{http_code}\n" "http://localhost/?msg=<script>alert(1)</script>"
-curl -s -o /dev/null -w "lfi=%{http_code}\n" "http://localhost/?file=../../../../etc/passwd"
-docker exec waf tail -20 /var/log/modsec/modsec_audit.log
+docker ps -a --filter name=waf
+docker ps -a --filter name=backend
+docker network ls | grep wafnet
 ```
 
 **Expected:** Run this before Step 9. The `waf` container is **Up**; the benign request returns `benign=200` while all three attacks return **403** (`sqli=403`, `xss=403`, `lfi=403`); and the audit log tail shows the matching OWASP CRS rule IDs — 942100 for SQLi, 941100 for XSS and 930100 for path traversal — together with the anomaly score that crossed the threshold of 5.
