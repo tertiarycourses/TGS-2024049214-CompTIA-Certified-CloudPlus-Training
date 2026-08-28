@@ -28,34 +28,67 @@ kubectl get nodes
 > Ready-made file: [`app.yaml`](app.yaml) — you can download it instead of typing this block.
 
 ```bash
+# 1. Check Kubernetes configuration
+kubectl config current-context
+kubectl config get-contexts
+
+# 2. Use the Kubernetes admin configuration
+export KUBECONFIG=/etc/kubernetes/admin.conf
+
+# 3. Verify connection to API server
+kubectl get nodes
+kubectl cluster-info
+
+# 4. Create application manifest
 cat > app.yaml <<'EOF'
 apiVersion: apps/v1
 kind: Deployment
-metadata: { name: web }
+metadata:
+  name: web
 spec:
   replicas: 3
-  selector: { matchLabels: { app: web } }
+  selector:
+    matchLabels:
+      app: web
   template:
-    metadata: { labels: { app: web } }
+    metadata:
+      labels:
+        app: web
     spec:
       containers:
       - name: web
         image: nginx:1.26-alpine
-        ports: [{ containerPort: 80 }]
+        ports:
+        - containerPort: 80
 ---
 apiVersion: v1
 kind: Service
-metadata: { name: web }
+metadata:
+  name: web
 spec:
   type: NodePort
-  selector: { app: web }
-  ports: [{ port: 80, nodePort: 30080 }]
+  selector:
+    app: web
+  ports:
+  - port: 80
+    targetPort: 80
+    nodePort: 30080
 EOF
 
+# 5. Deploy
 kubectl apply -f app.yaml
-kubectl rollout status deploy/web
+
+# 6. Wait for deployment
+kubectl rollout status deployment/web
+
+# 7. Check pods and service
 kubectl get pods,svc
+
+# 8. Test application
 curl -s http://localhost:30080 | head -3
+
+# If localhost does not work, use the node IP:
+curl -s http://172.30.1.2:30080 | head -3
 ```
 
 ---
