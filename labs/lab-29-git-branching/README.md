@@ -16,123 +16,117 @@ https://killercoda.com/playgrounds/scenario/ubuntu
 apt update && apt install -y git docker.io curl jq
 systemctl start docker
 
-docker run -d --name gitea -p 3000:3000 -p 2222:22 gitea/gitea:latest
-sleep 25
-curl -sI http://localhost:3000 | head -1
+docker exec -u git gitea gitea migrate
 ```
+```
+docker exec gitea mkdir -p /data/gitea/conf
+```
+```
+docker exec gitea sh -c 'cat > /data/gitea/conf/app.ini <<EOF
+[database]
+DB_TYPE = sqlite3
+PATH = /data/gitea/gitea.db
 
-UI: `http://<killercoda-host>:3000` — set up admin user (e.g. `admin`/`cloudplus`/`a@x.com`) on first visit.
+[server]
+DOMAIN = 172.30.1.2
+HTTP_PORT = 3000
+ROOT_URL = http://172.30.1.2:3000/
+SSH_PORT = 2222
 
----
+[security]
+INSTALL_LOCK = true
 
-## Step 2 — Create a repository (UI or API)
+[service]
+DISABLE_REGISTRATION = false
+REQUIRE_SIGNIN_VIEW = false
 
-```bash
-curl -s -u admin:cloudplus -X POST http://localhost:3000/api/v1/user/repos \
+[log]
+MODE = console
+EOF'
+```
+```
+docker restart gitea
+sleep 10
+```
+#Create admin repo
+```
+docker exec -u git gitea \
+  gitea admin user create \
+  --username admin \
+  --password cloudplus \
+  --email admin@example.com \
+  --admin
+```
+#Verify
+```
+curl -s -u admin:cloudplus \
+  http://172.30.1.2:3000/api/v1/user | jq '.login'
+```
+#create infra
+```
+curl -s -u admin:cloudplus \
+  -X POST http://172.30.1.2:3000/api/v1/user/repos \
   -H 'Content-Type: application/json' \
-  -d '{"name":"infra","auto_init":true,"default_branch":"main"}' | jq .full_name
+  -d '{"name":"infra","auto_init":true,"default_branch":"main"}' | jq '.full_name'
 ```
 
----
 
-## Step 3 — Clone, commit, push
-
-> Ready-made file: [`main.tf`](main.tf) — you can download it instead of typing this block.
-
-```bash
-mkdir -p /tmp/work && cd /tmp/work
-git clone http://admin:cloudplus@localhost:3000/admin/infra.git
-cd infra
-git config user.email lab@x
-git config user.name lab
-
-cat > main.tf <<'EOF'
-resource "aws_s3_bucket" "data" { bucket = "main-bucket" }
-EOF
-git add main.tf
-git commit -m "feat: initial bucket"
-git push origin main
-```
-
----
-
-## Step 4 — Branch management
-
-> Ready-made file: [`encryption.tf.snippet`](encryption.tf.snippet) — you can download it instead of typing this block.
-
-```bash
-git checkout -b feature/encryption
-cat >> main.tf <<'EOF'
-resource "aws_s3_bucket_server_side_encryption_configuration" "data" {
-  bucket = aws_s3_bucket.data.id
-  rule { apply_server_side_encryption_by_default { sse_algorithm = "AES256" } }
-}
-EOF
-git commit -am "feat: add SSE"
-git push origin feature/encryption
-```
 
 ---
 
 ## Step 5 — Open a Pull Request
 
 ```bash
-curl -s -u admin:cloudplus -X POST http://localhost:3000/api/v1/repos/admin/infra/pulls \
-  -H 'Content-Type: application/json' \
-  -d '{"title":"Add SSE","head":"feature/encryption","base":"main","body":"Encrypts the bucket"}'
+cd /root
+git clone http://172.30.1.2:3000/admin/infra.git
+cd infra
+
+git config user.name "admin"
+git config user.email "admin@example.com"
+
+cat > main.tf <<'EOF'
+terraform {
+  required_providers {
+    local = {
+      source  = "hashicorp/local"
+    }
+  }
+}
+
+provider "local" {}
+
+resource "local_file" "demo" {
+  filename = "${path.module}/hello.txt"
+  content  = "Hello from Terraform + Gitea"
+}
+EOF
+
+git add .
+git commit -m "Add initial Terraform configuration"
+git branch -M main
+git push origin main
 ```
 
 Open the PR in the UI and review the diff — that is the **code review** sub-objective.
 
 ---
 
-## Step 6 — Merge
+## Step 6 — Test GitOps workflow
 
 ```bash
-PR=1
-curl -s -u admin:cloudplus -X POST http://localhost:3000/api/v1/repos/admin/infra/pulls/$PR/merge \
-  -H 'Content-Type: application/json' \
-  -d '{"Do":"merge"}'
+echo "GitOps change" >> hello.txt
 
-git checkout main
-git pull
-cat main.tf | tail -5
-```
-
----
-
-## Step 7 — Resolve a merge conflict
-
-```bash
-git checkout -b feature/region
-sed -i 's/main-bucket/main-bucket-us/' main.tf
-git commit -am "feat: rename to us"
-git push origin feature/region
-
-git checkout main
-sed -i 's/main-bucket/main-bucket-eu/' main.tf
-git commit -am "feat: rename to eu"
+git add hello.txt
+git commit -m "Update infrastructure configuration"
 git push origin main
-
-git merge feature/region || true
-grep -n '<<<' main.tf
-# resolve
-sed -i 's/<<<<<<<.*//; s/=======.*//; s/>>>>>>>.*//' main.tf
-git commit -am "merge: keep eu"
 ```
+#verify Gitea's API:
 
----
+```
+curl -s -u admin:cloudplus \
+  http://172.30.1.2:3000/api/v1/repos/admin/infra/commits | jq '.[0].commit.message'
 
-## Step 8 — Branch protection (concept)
-
-In production, protect `main`:
-- Require PR + 1 approval.
-- Require CI green.
-- Block force-push.
-
-These map to the exam's **branch management** sub-objective.
-
----
+```
 
 ## Step 9 — Cleanup
 
